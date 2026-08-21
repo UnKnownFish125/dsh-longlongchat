@@ -20,6 +20,7 @@ import type { ChatViewSlotProps, RenderMessageImages } from '../contract/slots.t
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { formatRunDuration } from './message-chrome.ts'
+import { VirtualChatFlow } from './VirtualChatFlow.tsx'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
@@ -412,53 +413,41 @@ export function ChatView({
     loadOlder()
   }
 
+  const virtualItems = useMemo(() => [
+    ...(openState === 'loading' || (openState === 'error' && openError !== null) || hasMore
+      ? [{
+          key: '@chat-control', kind: 'control' as const, content: <>
+            {openState === 'loading' && <div className={css.hint}>{t('chat.loadingHistory')}</div>}
+            {openState === 'error' && openError !== null && <div className={css.openError}>{t('chat.loadError', { message: openError.message, code: openError.code })}</div>}
+            {hasMore && <div className={css.older}><button type="button" disabled={loadingOlder} onClick={loadOlderAnchored}>{loadingOlder ? t('loading') : t('chat.loadOlder')}</button></div>}
+          </>,
+        }]
+      : []),
+    ...order.map(nodeKey => ({
+      key: nodeKey, kind: 'node' as const, nodeKey, content: <ChatNodeSeat
+        nodeKey={nodeKey} useSession={useSession} selectedCallId={selectedCallId} cwd={cwd}
+        openFile={requestOpenFile} inspectCall={inspectCall} forkAt={forkAt}
+        renderMessageImages={renderMessageImages} fileMentions={fileMentions} renderSlot={renderSlot} t={t}
+      />,
+    })),
+    ...(running ? [{ key: '@running', kind: 'tail' as const, content: <TurnStatus startTime={runningTurnStart} t={t} /> }] : []),
+    ...pendingSteering.map(item => ({
+      key: `@steering:${item.id}`, kind: 'tail' as const,
+      content: <PendingSteeringBubble content={item.content} renderMessageImages={renderMessageImages} t={t} />,
+    })),
+  ], [cwd, fileMentions, forkAt, hasMore, inspectCall, loadingOlder, openError, openState, order, pendingSteering, renderMessageImages, renderSlot, requestOpenFile, running, runningTurnStart, selectedCallId, t, useSession])
+
   return (
     <div className={css.root}>
       <div ref={listRef} className={css.scroll}>
         <div ref={columnRef} className={css.column} data-chat-flow="">
-          {openState === 'loading' && <div className={css.hint}>{t('chat.loadingHistory')}</div>}
-          {openState === 'error' && openError !== null && (
-            <div className={css.openError}>
-              {t('chat.loadError', { message: openError.message, code: openError.code })}
-            </div>
-          )}
-          {hasMore && (
-            <div className={css.older}>
-              <button type="button" disabled={loadingOlder} onClick={loadOlderAnchored}>
-                {loadingOlder ? t('loading') : t('chat.loadOlder')}
-              </button>
-            </div>
-          )}
-          {order.map(nodeKey => (
-            <ChatNodeSeat
-              key={nodeKey}
-              nodeKey={nodeKey}
-              useSession={useSession}
-              selectedCallId={selectedCallId}
-              cwd={cwd}
-              openFile={requestOpenFile}
-              inspectCall={inspectCall}
-              forkAt={forkAt}
-              renderMessageImages={renderMessageImages}
-              fileMentions={fileMentions}
-              renderSlot={renderSlot}
-              t={t}
-            />
-          ))}
-          {/* No pending placeholders: questions (ui-user-questions) and approvals
-              (ApprovalPanel) both take over the composer, so a flow card would
-              double-render the same wait. */}
-          {/* Turn-level loading signal: rides the whole running turn (first-token
-              wait, tool execution, streaming) so it never flickers per step. */}
-          {running && <TurnStatus startTime={runningTurnStart} t={t} />}
-          {pendingSteering.map(item => (
-            <PendingSteeringBubble
-              key={item.id}
-              content={item.content}
-              renderMessageImages={renderMessageImages}
-              t={t}
-            />
-          ))}
+          <VirtualChatFlow
+            items={virtualItems}
+            getScrollElement={() => {
+              const local = listRef.current
+              return local === null ? null : scrollerOf(local)
+            }}
+          />
         </div>
         {!atBottom && (
           <div className={css.toBottomSlot}>
