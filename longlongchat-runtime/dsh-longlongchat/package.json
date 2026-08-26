@@ -1,28 +1,41 @@
 {
   "name": "dsh-longlongchat",
-  "version": "0.5.0",
-  "description": "LongLongChat：DeepSeek Harness 长对话、长期记忆与上下文清洗 Web 插件",
+  "version": "0.6.0",
+  "description": "LongLongChat：DeepSeek Harness 长对话虚拟滚动、大纲导航与长期记忆统一插件",
   "type": "module",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/UnKnownFish125/longlongchat.git"
   },
   "homepage": "https://github.com/UnKnownFish125/longlongchat",
+  "scripts": {
+    "postinstall": "node scripts/install-patch.mjs apply",
+    "patch:apply": "node scripts/install-patch.mjs apply",
+    "patch:verify": "node scripts/install-patch.mjs verify",
+    "patch:restore": "node scripts/install-patch.mjs restore"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
+    "./agent": "./agent/index.js",
+    "./scripts/install-patch": "./scripts/install-patch.mjs",
     "./dsh.patch.yml": "./dsh.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
     "index.js",
     "client.js",
+    "agent/",
+    "patches/",
+    "scripts/",
+    "README.md",
     "dsh.patch.yml",
     "package.json"
   ],
   "license": "AGPL-3.0-only",
   "peerDependencies": {
     "@deepseek-ai/dsh-settings": ">=0.1.0-rc.6 <0.2",
+    "@deepseek-ai/dsh-tools": ">=0.1.0-rc.6 <0.2",
     "@deepseek-ai/schemastery": "^3.18.1"
   },
   "dsh": {
