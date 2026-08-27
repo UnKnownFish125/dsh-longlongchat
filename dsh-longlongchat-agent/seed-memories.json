@@ -1,0 +1,10 @@
+[
+  {
+    "content": "LongLongChat 试验机会话开关：/memory on 开启、/memory off 关闭、/memory status 查看状态、/memory clean 执行衰减清理",
+    "key_facts": "longlongchat;memory命令;会话开关",
+    "type": "fact",
+    "domain": "work",
+    "scope": "global",
+    "importance": 0.35
+  }
+]

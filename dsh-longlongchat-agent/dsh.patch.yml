@@ -1,0 +1,4 @@
+# Isolated LongLongChat agent bundle for the 3091 test machine.
+- insert:
+    - id: longlongchat-agent
+      name: 'dsh-longlongchat-agent'
