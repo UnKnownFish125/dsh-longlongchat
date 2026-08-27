@@ -23,26 +23,35 @@ import { fileURLToPath } from 'node:url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const pkgRoot = resolve(__dirname, '..')
 
-const SUPPORTED_RELEASES = new Set(['0.1.0-rc.6'])
+const SUPPORTED_RELEASES = new Set(['0.1.0-rc.6', '0.1.1-rc.2'])
+
+const RELEASE_PATCH_DIR = {
+  '0.1.0-rc.6': 'rc6',
+  '0.1.1-rc.2': 'rc2',
+}
+
+function patchDirFor(release) {
+  return RELEASE_PATCH_DIR[release]
+}
 
 const TARGETS = [
   {
     key: 'host-apiproxy',
     pkgName: 'dsh-host-apiproxy',
     rel: ['@deepseek-ai', 'dsh-host-apiproxy', 'lib', 'index.js'],
-    patchFile: ['patches', 'rc6', 'dsh-host-apiproxy.index.js'],
+    patchFile: (dir) => ['patches', dir, 'dsh-host-apiproxy.index.js'],
   },
   {
     key: 'client-runtime',
     pkgName: 'dsh-client-runtime',
     rel: ['@deepseek-ai', 'dsh-client-runtime', 'lib', 'client.js'],
-    patchFile: ['patches', 'rc6', 'dsh-client-runtime.client.js'],
+    patchFile: (dir) => ['patches', dir, 'dsh-client-runtime.client.js'],
   },
   {
     key: 'ui-conversation',
     pkgName: 'dsh-client-ui-conversation',
     rel: ['@deepseek-ai', 'dsh-client-ui-conversation', 'lib', 'client.js'],
-    patchFile: ['patches', 'rc6', 'dsh-client-ui-conversation.client.js'],
+    patchFile: (dir) => ['patches', dir, 'dsh-client-ui-conversation.client.js'],
   },
 ]
 
@@ -97,7 +106,7 @@ async function verifyTarget(root, target) {
   const file = targetPath(root, target)
   const current = await readFile(file, 'utf8').catch(() => null)
   if (current === null) return { status: 'missing' }
-  const expected = await readFile(resolve(pkgRoot, ...target.patchFile), 'utf8')
+  const expected = await readFile(resolve(pkgRoot, ...target.patchFile(target.patchDir)), 'utf8')
   const patched = hashOf(current) === hashOf(expected)
   return { status: patched ? 'patched' : 'unpatched' }
 }
@@ -119,8 +128,15 @@ async function main() {
   log('mode', `${mode} root=${root} release=${release ?? 'unresolved'}`)
 
   if (mode === 'verify') {
+    const patchDir = patchDirFor(release)
+    if (patchDir === void 0) {
+      log('verify', `unsupported release ${release}; expected one of: ${[...SUPPORTED_RELEASES].join(', ')}`)
+      process.exitCode = 1
+      return
+    }
     let all = true
     for (const target of TARGETS) {
+      target.patchDir = patchDir
       const status = await verifyTarget(root, target)
       log(target.key, status.status)
       if (status.status !== 'patched') all = false
@@ -154,7 +170,9 @@ async function main() {
     return
   }
 
+  const patchDir = patchDirFor(release)
   for (const target of TARGETS) {
+    target.patchDir = patchDir
     const dest = targetPath(root, target)
     await mkdir(dirname(dest), { recursive: true })
     const status = await verifyTarget(root, target)
@@ -163,8 +181,8 @@ async function main() {
       continue
     }
     await backupTarget(root, target)
-    await copyFile(resolve(pkgRoot, ...target.patchFile), dest)
-    log(target.key, `patched (${relative(pkgRoot, resolve(pkgRoot, ...target.patchFile))})`)
+    await copyFile(resolve(pkgRoot, ...target.patchFile(patchDir)), dest)
+    log(target.key, `patched (${relative(pkgRoot, resolve(pkgRoot, ...target.patchFile(patchDir)))})`)
   }
   await writeFile(stateFile(root), JSON.stringify({
     release,

@@ -113,7 +113,7 @@ window.__ModuleLoader__.load({
 				};
 			}
 			/**
-			* Install the shell's renderer (web-react's createSlotRenderer product).
+			* Install the shell's renderer (ui-renderer's createSlotRenderer product).
 			* Boot-once: a second install throws. Runs through the caller's ctx.effect,
 			* so shell fiber unload uninstalls the renderer.
 			* @param renderer - the outlet machinery implementing SlotRenderer.
@@ -4617,11 +4617,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				details: object({ ns: string() })
 			}),
 			object({
-				code: literal("settings-not-exposed"),
-				message: string(),
-				details: object({ ns: string() })
-			}),
-			object({
 				code: literal("settings-conflict"),
 				message: string(),
 				details: object({
@@ -5352,9 +5347,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		* shell over it: {@link defineStore} bakes an init/persist/actions literal
 		* into a {@link StoreHandle}, the registration-side store seat of slot
 		* terminals. Lives in the React-free runtime (the data layer owns its
-		* engine; web-react is shell-only React
+		* engine; ui-renderer is shell-only React
 		* glue): engine products are bare observables — subscribe/getSnapshot/
-		* update/set, NO selector hook. Hook synthesis is web-react's (the one
+		* update/set, NO selector hook. Hook synthesis is ui-renderer's (the one
 		* uSES bridge, cached per source at the binding site).
 		*/
 		/**
@@ -7100,9 +7095,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			*  passes drop all writes once the generation moves on. */
 			openGeneration = 0;
 			loadingOlder = false;
-			/** Whole-transcript heading outline supplied by Host history. */
-			outline = null;
-			prefetchedWindow = null;
 			pending = /* @__PURE__ */ new Map();
 			pendingRev = 0;
 			pendingCache = null;
@@ -7110,6 +7102,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			queueMirror = new SessionQueueMirror();
 			/** Session-owned business Context engine over the contiguous raw window. */
 			conversation;
+			/** Whole-transcript heading outline supplied by Host history. */
+			outline = null;
+			prefetchedWindow = null;
 			running = false;
 			address;
 			parentAvailable = false;
@@ -7201,7 +7196,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			* @param mode - queue appends after the current turn; steer interrupts it.
 			* @returns the prompt result (also mirrored into promptError on failure).
 			*/
-			async prompt(content, mode) {
+			async prompt(content, mode, signal) {
 				this.promptError = null;
 				this.lastAgentError = null;
 				this.promptAttempted = true;
@@ -7214,7 +7209,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 						mode,
 						content,
 						clientTimeZone: resolvedClientTimeZone()
-					})).result;
+					}, signal)).result;
 					else if (this.address.mode === "one-shot") result = {
 						ok: false,
 						error: {
@@ -7239,7 +7234,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 								text: part.text
 							}] : []),
 							clientTimeZone: resolvedClientTimeZone()
-						})).result;
+						}, signal)).result;
 						result = routed.ok ? {
 							ok: true,
 							value: { accepted: true }
@@ -7371,7 +7366,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			* @returns the admission result, or the error branch on transport failure.
 			*/
 			async command(line) {
-				const result = await this.remote.commands.execute(this.sessionId, line);
+				const result = await this.remote.commands.execute(this.sessionId, line, []);
 				if (!result.ok) return result;
 				return {
 					ok: true,
@@ -7388,62 +7383,64 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				this.openPromise = promise;
 				return promise;
 			}
+			/** Page up: pull one earlier page with the window's first seq as beforeSeq and prepend. */
+			/** LoadOlder: pull one earlier page with the window's first seq as beforeSeq and prepend. */
 			/** LoadOlder: pull one earlier page with the window's first seq as beforeSeq and prepend.
 			*  `untilSeq` batches: pages are fetched back-to-back without prepending (no per-page
-			*  re-render), then the merged window is prepended once — outline jumps to far messages
+			*  re-render), then the merged window is prepended once - outline jumps to far messages
 			*  cost one render instead of one per page. */
 			async loadOlder(options = {}) {
-				if (this.openState !== "open" || !this.hasMore || this.loadingOlder) return;
-				this.loadingOlder = true;
-				this.notifier.markDirty();
-				try {
-					const pages = [];
-					let beforeSeq = this.baseSeq;
-					let hasMore = this.hasMore;
-					let outline = void 0;
-					while (true) {
-						const { result } = await this.history({
-							beforeSeq,
-							maxMessages: options.maxMessages ?? 50
-						});
-						if (!result.ok) return;
-						const older = result.value.events;
-						if (older.length === 0) {
-							hasMore = result.value.hasMore;
-							break;
-						}
-						const tail = older[older.length - 1];
-						if (tail === void 0 || tail.event.seq + 1 !== beforeSeq) {
-							console.error(`[web-runtime] history page discontinuous: tail seq ${tail?.event.seq} vs beforeSeq ${beforeSeq}`);
-							hasMore = false;
-							break;
-						}
-						pages.unshift(older);
-						beforeSeq = older[0]?.event.seq ?? beforeSeq;
-						hasMore = result.value.hasMore;
-						if (result.value.outline !== void 0) outline = result.value.outline;
-						if (options.untilSeq !== void 0 && beforeSeq <= options.untilSeq) break;
-						if (!hasMore) break;
-						if (options.maxPages !== void 0 && pages.length >= options.maxPages) break;
-					}
-					if (pages.length === 0) {
-						this.hasMore = hasMore;
-						this.conversation.prepend([], hasMore);
-						return;
-					}
-					const merged = pages.flat();
-					this.events = [...merged.map((e) => e.event), ...this.events];
-					this.views = [...merged.map((e) => e.view), ...this.views];
-					this.baseSeq = beforeSeq;
-					this.hasMore = hasMore;
-					if (outline !== void 0) this.outline = outline;
-					this.conversation.prepend(merged.map(conversationInput), this.hasMore);
-				} catch (error) {
-					console.error("[web-runtime] loadOlder failed:", error);
-				} finally {
-					this.loadingOlder = false;
-					this.notifier.markDirty();
-				}
+			if (this.openState !== "open" || !this.hasMore || this.loadingOlder) return;
+			this.loadingOlder = true;
+			this.notifier.markDirty();
+			try {
+			const pages = [];
+			let beforeSeq = this.baseSeq;
+			let hasMore = this.hasMore;
+			let outline = void 0;
+			while (true) {
+			const { result } = await this.history({
+			beforeSeq,
+			maxMessages: options.maxMessages ?? 50
+			});
+			if (!result.ok) return;
+			const older = result.value.events;
+			if (older.length === 0) {
+			hasMore = result.value.hasMore;
+			break;
+			}
+			const tail = older[older.length - 1];
+			if (tail === void 0 || tail.event.seq + 1 !== beforeSeq) {
+			console.error("[web-runtime] history page discontinuous: tail seq " + tail?.event.seq + " vs beforeSeq " + beforeSeq);
+			hasMore = false;
+			break;
+			}
+			pages.unshift(older);
+			beforeSeq = older[0]?.event.seq ?? beforeSeq;
+			hasMore = result.value.hasMore;
+			if (result.value.outline !== void 0) outline = result.value.outline;
+			if (options.untilSeq !== void 0 && beforeSeq <= options.untilSeq) break;
+			if (!hasMore) break;
+			if (options.maxPages !== void 0 && pages.length >= options.maxPages) break;
+			}
+			if (pages.length === 0) {
+			this.hasMore = hasMore;
+			this.conversation.prepend([], hasMore);
+			return;
+			}
+			const merged = pages.flat();
+			this.events = [...merged.map((e) => e.event), ...this.events];
+			this.views = [...merged.map((e) => e.view), ...this.views];
+			this.baseSeq = beforeSeq;
+			this.hasMore = hasMore;
+			if (outline !== void 0) this.outline = outline;
+			this.conversation.prepend(merged.map(conversationInput), this.hasMore);
+			} catch (error) {
+			console.error("[web-runtime] loadOlder failed:", error);
+			} finally {
+			this.loadingOlder = false;
+			this.notifier.markDirty();
+			}
 			}
 			/** Reconnect rebuild (manager calls this on onConnected for instances that were opened):
 			*  reset the window and rerun open; pending waits for the baseline replay. Invalidates any
@@ -7793,7 +7790,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				});
 			}
 		};
-		/** Convert one wire history row into the assembler's transport-neutral input. */
 		function compactLiveOutlineTitle(text, max = 44) {
 			const clean = text.replace(/[`*_>#]/g, "").replace(/\s+/g, " ").trim().replace(/^[-•]\s+/, "");
 			if (!clean) return null;
@@ -7864,6 +7860,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			return result;
 		}
+		/** Convert one wire history row into the assembler's transport-neutral input. */
 		function conversationInput(entry) {
 			return {
 				event: entry.event,
@@ -10421,9 +10418,30 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		* @returns an absolute path when a workspace root is available, otherwise the original path.
 		*/
 		function resolveWorkspacePath(cwd, path) {
-			if (path.startsWith("/") || /^[A-Za-z]:[/\\]/.test(path) || path.startsWith("\\\\")) return path;
+			if (path.startsWith("/") || isWindowsStylePath(path)) return path;
 			if (cwd === void 0 || cwd === "") return path;
 			return `${cwd.replace(/[/\\]+$/, "")}/${path.replace(/^[/\\]+/, "")}`;
+		}
+		/** Drive-letter or UNC path; Web display must not rewrite these as `~`. */
+		function isWindowsStylePath(value) {
+			return /^[A-Za-z]:[/\\]/.test(value) || value.startsWith("\\\\");
+		}
+		/**
+		* Display-only POSIX home abbreviation. Windows drive and UNC paths stay
+		* verbatim, including when `home` itself is a Windows path. A missing, empty,
+		* or filesystem-root `home` leaves `path` unchanged so `/` cannot become `~`.
+		* @param path - absolute or already-short display path.
+		* @param home - host account home from `host.describe`; absent skips abbreviation.
+		* @returns `~` or `~/…` for the POSIX home and its descendants, otherwise `path`.
+		*/
+		function abbreviateHomePath(path, home) {
+			if (home === void 0 || home === "") return path;
+			if (isWindowsStylePath(path) || isWindowsStylePath(home)) return path;
+			const root = home.replace(/\/+$/, "");
+			if (root === "" || root === "/") return path;
+			if (path.replace(/\/+$/, "") === root) return "~";
+			if (path.startsWith(`${root}/`)) return `~${path.slice(root.length)}`;
+			return path;
 		}
 		//#endregion
 		//#region lib/types/client/sessions/partial.js
@@ -10498,6 +10516,18 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		/** A collected name list rendered as one label; null when the list is empty. */
 		function joined(names) {
 			return names.length > 0 ? names.join(", ") : null;
+		}
+		/**
+		* The referenced-session labels of one durable `session-reference` recall
+		* source, in first-seen order; empty for every other source shape, including
+		* a foreign or older log whose reference entries carry no readable label.
+		* @param source - the logged `user/message` source, exactly as recorded.
+		* @returns distinct non-empty reference labels.
+		*/
+		function sessionRecallLabels(source) {
+			const record = asRecord(source);
+			if (record === null || readString(record, "kind") !== "session-reference") return [];
+			return collect(record, "references", "label");
 		}
 		/**
 		* Project one durable message source onto its transcript role and producer name.
@@ -10638,6 +10668,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		exports.SlotRegistry = SlotRegistry;
 		exports.WorkspaceCreateError = WorkspaceCreateError;
 		exports.WorkspaceRuntime = WorkspaceRuntime;
+		exports.abbreviateHomePath = abbreviateHomePath;
 		exports.apply = apply;
 		exports.contextForm = contextForm;
 		exports.contextProvenance = contextProvenance;
@@ -10654,6 +10685,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		exports.isTokenDelta = isTokenDelta;
 		exports.resolveWorkspacePath = resolveWorkspacePath;
 		exports.scopeOf = scopeOf;
+		exports.sessionRecallLabels = sessionRecallLabels;
 		exports.shallowEqual = shallowEqual;
 		exports.toAssistantBlock = toAssistantBlock;
 		exports.toAssistantBlocks = toAssistantBlocks;

@@ -6,15 +6,16 @@ DeepSeek Harness 长对话插件：虚拟滚动、分级大纲导航、加载更
 
 - `index.js` / `client.js`：Web 插件。注册 `/mem-api` 同源代理与记忆控制面板（会话状态卡、检索、图谱、归档、维护）。
 - `agent/index.js`：Agent 侧记忆插件。语义召回注入、低成本 LLM 抽取、`/memory` 命令、`memory_recall` / `memory_save` / `memory_briefing` 工具。
-- `patches/rc6/`：DSH rc.6 核心包完整补丁。
+- `patches/rc6/`：DSH `0.1.0-rc.6` 核心包完整补丁。
   - `dsh-client-runtime.client.js`：会话 `outline` 状态、`loadOlder(options)`、`prefetch()` 与 live outline 合并。
   - `dsh-client-ui-conversation.client.js`：`VirtualChatFlow` 虚拟滚动、`OutlinePanel` 大纲弹窗、分页锚定与像素校正。
   - `dsh-host-apiproxy.index.js`：`session.history` 返回按用户消息分组的 `outline`。
+- `patches/rc2/`：DSH `0.1.1-rc.2` 核心包平行补丁，同构能力：`VirtualChatFlow`/`OutlinePanel`、`outline` 状态与 `loadOlder(options)` 批量（`untilSeq` 直达目标区、单次渲染）、host `outlineOf` 分组大纲。
 - `scripts/install-patch.mjs`：安装、校验、恢复工具。
 
 ## 兼容性
 
-当前补丁面向 DSH `0.1.0-rc.6`。安装器在检测到其他核心版本时会拒绝写入，避免破坏未验证的 DSH 发行版。未来新增 rc.2 支持时，将按 DSH 版本选择 `patches/<release>/` 文件，并保持同一 `apply / verify / restore` 接口。
+当前同时支持 DSH `0.1.0-rc.6` 与 `0.1.1-rc.2`：安装器读取目标安装根的三个核心包版本，按 `0.1.0-rc.6 → patches/rc6/`、`0.1.1-rc.2 → patches/rc2/` 选择补丁；其他版本拒绝写入，避免破坏未验证的 DSH 发行版。同一 `apply / verify / restore` 接口覆盖全部受支持版本。
 
 ## 安装
 

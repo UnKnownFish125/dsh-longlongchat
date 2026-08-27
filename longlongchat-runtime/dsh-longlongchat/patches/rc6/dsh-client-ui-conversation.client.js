@@ -5568,7 +5568,9 @@ window.__ModuleLoader__.load({
 					target.paged = true;
 					const nearest = nearestKey(target.seq);
 					if (nearest !== null) virtualApiRef?.current?.scrollToKey(nearest);
-					loadOlder({ maxMessages: 1000 });
+					// Batch: fetch pages without per-page re-render until the window
+					// covers the target seq (or history is exhausted), then jump once.
+					loadOlder({ maxMessages: 600, untilSeq: target.seq, maxPages: 20 });
 					return;
 				}
 				if (key === null) key = nearestKey(target.seq);

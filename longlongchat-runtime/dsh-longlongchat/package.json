@@ -1,6 +1,6 @@
 {
   "name": "dsh-longlongchat",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "LongLongChat：DeepSeek Harness 长对话虚拟滚动、大纲导航与长期记忆统一插件",
   "type": "module",
   "repository": {
